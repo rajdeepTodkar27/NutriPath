@@ -1,97 +1,88 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StructuredOutputParser } from "@langchain/core/output_parsers";
+import { z } from "zod";
+import { RunnableSequence } from "@langchain/core/runnables";
 
 const model = new ChatGoogleGenerativeAI({
-    model: 'gemini-2.0-flash',
-    temperature: 1,
-    apiKey: process.env.GOOGLE_GENAI_API_KEY
+  model: 'gemini-2.0-flash',
+  temperature: 1,
+  apiKey: process.env.GOOGLE_GENAI_API_KEY
 });
 
 export async function POST(req: NextRequest) {
-   try {
-     const { age, gender, allergies, dietary_preference, bmi, goal, activity, sleep_duration, hydration_status, blood_sugar, budget, bmr } = await req.json()
- 
-const prompt = `You are a smart nutrition assistant. Based on the following user profile, generate a personalized daily meal plan. Return the output in valid JSON format with the following structure:
+  try {
+    const { age, gender, allergies, dietary_preference, bmi, goal, activity, sleep_duration, hydration_status, blood_sugar, budget, bmr } = await req.json()
 
-{
-  "daily_calorie_target": string,
-  "meals": {
-    "breakfast": {
-      "meal": string,
-      "ingredients": string[],
-      "preparation": string,
-      "calories": string,
-      "macros": string
-    },
-    "snack1": {
-      "meal": string,
-      "ingredients": string[],
-      "preparation": string,
-      "calories": string,
-      "macros": string
-    },
-    "lunch": {
-      "meal": string,
-      "ingredients": string[],
-      "preparation": string,
-      "calories": string,
-      "macros": string
-    },
-    "snack2": {
-      "meal": string,
-      "ingredients": string[],
-      "preparation": string,
-      "calories": string,
-      "macros": string
-    },
-    "dinner": {
-      "meal": string,
-      "ingredients": string[],
-      "preparation": string,
-      "calories": string,
-      "macros": string
+    const parser = StructuredOutputParser.fromZodSchema(
+      z.object({
+        daily_calorie_target: z.string(),
+        meals: z.object({
+          breakfast: zMeal(),
+          snack1: zMeal(),
+          lunch: zMeal(),
+          snack2: zMeal(),
+          dinner: zMeal()
+        }),
+        nutritional_guidance: z.array(z.string())
+      })
+    );
+
+    function zMeal() {
+      return z.object({
+        meal: z.string(),
+        ingredients: z.array(z.string()),
+        preparation: z.string(),
+        calories: z.string(),
+        macros: z.string()
+      });
     }
-  },
-  "nutritional_guidance": string[]
-}
+
+    const prompt = ChatPromptTemplate.fromMessages([
+      ["system", "You are a smart nutrition assistant."],
+      ["user", `
+Based on the following user profile, generate a personalized daily meal plan.
 
 User Profile:
-- Age: ${age} years
-- Gender: ${gender}
-- Allergies/Intolerances: ${allergies}
-- Dietary Preference: ${dietary_preference}
-- BMI: ${bmi}
-- Goal: ${goal}
-- Activity Level (optional): ${activity}
-- Sleep Duration (optional): ${sleep_duration} hours
-- Hydration Status (optional): ${hydration_status}
-- Blood Sugar (optional): ${blood_sugar} mg/dL
-- Budget (optional): ${budget}
-- Basal Metabolic Rate (BMR) (optional): ${bmr} kcal/day
+- Age: {age} years
+- Gender: {gender}
+- Allergies/Intolerances: {allergies}
+- Dietary Preference: {dietary_preference}
+- BMI: {bmi}
+- Goal: {goal}
+- Activity Level: {activity}
+- Sleep Duration: {sleep_duration} hours
+- Hydration Status: {hydration_status}
+- Blood Sugar: {blood_sugar} mg/dL
+- Budget: {budget}
+- Basal Metabolic Rate (BMR): {bmr} kcal/day
 
 Instructions:
-- If BMR is available, use it to guide calorie intake. If not, estimate from BMI, age, and activity.
-- Strictly avoid allergens and respect dietary preferences.
-- Support the user's health goal through proper macros (e.g., high protein for weight gain).
-- Consider budget and hydration/sleep if provided.
-- Keep meals practical and easy to prepare.
-- If any data is missing, use reasonable assumptions based on age, gender, and goal.
-- Format the response strictly in valid JSON. Do not include markdown or commentary.
-- Budget is provided in Indian Rupees per day. Ensure the entire meal plan stays within this daily budget.
-- Prefer Indian diet items to suit local tastes and availability. Include Indian dishes as primary options; international foods can be included only if practical.
-- For non-vegetarian diets, strictly avoid beef and pork. Use chicken, fish, eggs, or other regionally acceptable meats instead.
-`;
+- If BMR is available, use it to guide calorie intake; otherwise estimate.
+- Avoid allergens & follow dietary preferences.
+- Support user's health goal with proper macros.
+- Stay within budget (INR per day) using mostly Indian dishes.
+- Avoid beef & pork; non-veg can use chicken, fish, eggs.
+- Output must be valid JSON matching the schema.
 
-     const res = await model.invoke(prompt);
-     const content:any  = res.content
-     const cleaned = content.replace(/```json|```/g, '').trim();
+{format_instructions}
+`]
+    ]);
 
-    const resObject = JSON.parse(cleaned);
+    const chain = RunnableSequence.from([
+      prompt,
+      model,
+      parser
+    ]);
+
+    const result = await chain.invoke({ age, gender, allergies, dietary_preference, bmi, goal, activity, sleep_duration, hydration_status, blood_sugar, budget, bmr, format_instructions: parser.getFormatInstructions() })
+
     
-    return NextResponse.json({message: "successfully created the meal plan" ,data: resObject},{status: 200});
-   } catch (error) {
-        console.log(error);
-        NextResponse.json({error: "Internal server error"},{status: 500})
-        
-   }
+    return NextResponse.json({ message: "successfully created the meal plan", data: result }, { status: 200 });
+  } catch (error) {
+    console.log(error);
+    NextResponse.json({ error: "Internal server error" }, { status: 500 })
+
+  }
 }

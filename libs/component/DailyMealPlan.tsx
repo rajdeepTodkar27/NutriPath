@@ -101,7 +101,7 @@ const DailyMealPlan: React.FC<DailyMealPlanProps> = ({ data }) => {
                                                     <h3 className="text-[#111714] text-base font-bold leading-tight">{meal.meal}</h3>
                                                     <p className="text-[#648772] text-sm font-normal leading-normal">A delicious and nutritious option.</p>
                                                 </div>
-
+                                                
                                             </div>
                                         </div>
                                     </div>

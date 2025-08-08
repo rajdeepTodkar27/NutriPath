@@ -63,6 +63,7 @@ const MealPlanPersonalization = () => {
   const [onLoading, setonLoading] = useState(false)
 
 
+  
   const onSubmit = (data: FormValues) => {
     setonLoading(true)
     const allergies = []
@@ -85,8 +86,7 @@ const MealPlanPersonalization = () => {
       budget: data.budget,
       bmr: data.bmr === undefined ? "unknown" : data.bmr,
     }
-    console.log(payload);
-
+    
     axios.post("/api/mealplan", payload)
       .then((res) => {
         setmealPlan(res.data.data)
